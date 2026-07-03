@@ -58,14 +58,14 @@ def get_text(model, crop_plate= None):
             'class': class_name
         })
     extracted_boxes = sorted(extracted_boxes, key = lambda x : x['x2'], reverse=True)
-    final_conf = 1
+    final_conf = 0.0
     plate_text = ''
     for box in extracted_boxes:
         ch= box['class']
         plate_text += yolo_to_arabic[ch]
         plate_text+= ' '
-        final_conf= min(final_conf, box['score'])
-    if len(extracted_boxes):
+        final_conf+= box['score']
+    if not len(extracted_boxes) ==0:
         final_conf/=len(extracted_boxes)
     return plate_text, final_conf
 
@@ -75,13 +75,14 @@ def get_text(model, crop_plate= None):
 def write_csv(results, output_path):  
     with open(output_path, 'w', encoding= 'utf-8') as f:
         # Header
-        f.write('frame_nmr,car_id,car_bbox,license_plate_bbox,license_plate_bbox_score,license_number,license_number_score\n')
+        f.write('frame_nmr,car_id,car_bbox,license_plate_bbox,license_plate_bbox_score,license_number_score,license_plate_number\n')
 
         for frame_nmr in results.keys():
             for car_id in results[frame_nmr].keys():
                 data = results[frame_nmr][car_id]
                 
-                if 'car' in data and 'license_plate' in data and 'text' in data['license_plate']:
+                if 'car' in data and 'license_plate' in data and 'license_plate_number' in data['license_plate']\
+                    and data['license_plate']['license_plate_number']:
                     #  encode lists to JSON strings wrapped in double quotes
                     car_bbox = json.dumps(data['car']['bbox'])
                     lp_bbox = json.dumps(data['license_plate']['bbox'])
@@ -89,8 +90,8 @@ def write_csv(results, output_path):
                     f.write(
                         f'{frame_nmr},{car_id},"{car_bbox}","{lp_bbox}",'
                         f'{data["license_plate"]["bbox_score"]},'
-                        f'{data["license_plate"]["text"]},'
-                        f'{data["license_plate"]["text_score"]}\n'
+                        f'{data["license_plate"]["text_score"]},'
+                        f'{data["license_plate"]["license_plate_number"]}\n'
                     )
 
 def Get_car(license_plate, vehicle_ids):
