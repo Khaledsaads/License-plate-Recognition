@@ -26,9 +26,9 @@ class PlateTracker:
                 result[frame_num]= {}
                 track_results = self.coco_model.track(frame, persist = True, tracker = tracker_config, verbose= False)[0]
                 track_ids = []
-                
+
                 # track cars
-                if track_results and track_results.boxes.id  is not None:
+                if track_results is not None and track_results.boxes.id  is not None:
                     boxes = track_results.boxes.xyxy.detach().cpu().tolist()
                     ids = track_results.boxes.id.detach().cpu().tolist()
                     clss = track_results.boxes.cls.detach().cpu().tolist()
@@ -55,14 +55,13 @@ class PlateTracker:
                         result[frame_num][car_id] = {
                             'car': {'bbox': [xcar1, ycar1, xcar2, ycar2]},
                             'license_plate': {'bbox': [x1, y1, x2, y2],
-                            'text': license_plate_text,
                             'bbox_score': plate_score,
-                            'text_score': text_score}
+                            'text_score': text_score,
+                            'license_plate_number': license_plate_text}
                         }
                 if not frame_num%100:
                     print(f'Processed frames: -{frame_num}/{total_frames}-')
                     
             write_csv(result, output_csv_path)
         finally:
-            # Ensures resources are freed even if an error occurs mid-loop
             cap.release()
