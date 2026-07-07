@@ -60,8 +60,6 @@ async def annotate(job_id: str):
     video_file = video_files[0].name
     video_path = f"{VIDEOS}/{video_file} "
     output_path = Path(f'{OUPTUTS}/{video_file}')
-    print("STILL WORKING")
-    print(output_path, "---------",video_file)
     plate_visualize.process_video(video_path, output_path, csv_path)
     return {
         'video':video_file
