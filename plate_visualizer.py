@@ -18,7 +18,7 @@ class LicensePlateVisualizer:
     
   
     def _prepare_video(self, input_path, output_path):
-        cap = cv2.VideoCapture(input_path)
+        cap = cv2.VideoCapture(input_path, cv2.CAP_FFMPEG)
         if not cap.isOpened():
             raise ValueError(f'Could not find video: {input_path}')
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -40,7 +40,7 @@ class LicensePlateVisualizer:
         
         return results, license_plates
 
-    def draw_separated_arabic_text(self, frame, text, position, font_size, color):
+    def _draw_separated_arabic_text(self, frame, text, position, font_size, color):
         bidi_text = get_display(text)
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         pil_frame = Image.fromarray(rgb_frame)
@@ -80,7 +80,7 @@ class LicensePlateVisualizer:
                     tby1, tby2 = ycar1-30, ycar1- text_size[1]-50
                     cv2.rectangle(frame,(tbx1, tby1), (tbx2, tby2), (255, 255, 255), -1)
                     tx1, ty1 = xcar1+35, tby1-45
-                    frame = self.draw_separated_arabic_text(frame, 
+                    frame = self._draw_separated_arabic_text(frame, 
                                                         license_plate_number, 
                                                         (tx1, ty1), 
                                                         self.font_size, 
