@@ -78,12 +78,17 @@ def time_to_end():
         end_second = st.number_input('Second', min_value=0, max_value=59, value=0, width=70, key = 'end_sec')
     return (end_hour, end_minute, end_second)
 
-def time_to_frames(start_time, end_time, fps=30):
-    start_hour, start_min, start_sec = start_time
-    end_hour, end_min, end_sec= end_time
-    start_frame = (3600*start_hour + 60*start_min + start_sec)*fps
-    end_frame = (3600*end_hour + 60*end_min + end_sec)*fps
-    return (start_frame, end_frame)
+def time_to_frames(time_, fps=30):
+    hour, minute, sec = time_
+    frame = (3600*hour + 60*minute + sec)*fps
+    return frame
+
+def frame_to_time(frame_nums, fps=30):
+    frame_nums /= fps
+    num_hour = int(frame_nums/3600)
+    num_mins = int((frame_nums- num_hour* 3600)/ 60)
+    num_secs = int(frame_nums - num_hour* 3600 - num_mins * 60)
+    return (num_hour, num_mins, num_secs)
 
 def cut_video(start_time, end_time, video_source):
     CUTTED_PATH = Path('cutted_videos')
@@ -100,7 +105,8 @@ def cut_video(start_time, end_time, video_source):
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total_frms = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cutted_video = cv2.VideoWriter(output_source, fourcc, fps, (width, height))
-    start_frame, end_frame = time_to_frames(start_time, end_time, fps)
+    start_frame= time_to_frames(start_time, fps)
+    end_frame= time_to_frames(end_time, fps)
     end_frame = min(end_frame, total_frms)
     if start_frame < total_frms:
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
@@ -114,6 +120,7 @@ def cut_video(start_time, end_time, video_source):
         cutted_video.write(frame)
     cap.release()
     cutted_video.release()
+    st.session_state['fps'] = fps
     return output_source
 
 
@@ -163,3 +170,28 @@ if choice == 'Search for a plate within a specific time interval':
     
     if st.session_state.get('Processed', False) == True:
         df = pd.read_csv(f'csv_results/{st.session_state['operation_id']}.csv')
+        license_plates = {}
+        for car_id in np.unique(df['car_id']):
+            mx = np.max(df[df['car_id']== car_id]['license_number_score'])
+            license_plate_number = df[
+            (df['car_id'] == car_id)&
+            (df['license_number_score'] ==mx)]['license_plate_number'].iloc[0]
+            print('*'*50)
+            print(license_plate_number)
+            print('*'*50)
+            first_frame = np.min(df[df['car_id']==car_id]['frame_nmr'])
+            last_frame = np.max(df[df['car_id']==car_id]['frame_nmr'])
+            license_plates[license_plate_number]= (first_frame, last_frame)
+        data = []
+        video_start = time_to_frames(st.session_state['start_time'])
+        video_end = time_to_frames(st.session_state['end_time'])
+        for plate, times in license_plates.items():
+            start_time_car = frame_to_time(video_start +times[0], st.session_state['fps'])
+            end_time_car = frame_to_time(video_end +times[1], st.session_state['fps'])
+            data.append({
+                "License Plate": plate,
+                "Start Time": start_time_car,
+                "End Time": end_time_car
+            })
+
+        st.table(data)

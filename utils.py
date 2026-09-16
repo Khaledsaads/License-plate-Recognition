@@ -105,6 +105,6 @@ def Get_car(license_plate, vehicle_ids):
             car_idx = i
             break
     if foundit:
-        return vehicle_ids[i]
+        return vehicle_ids[car_idx]
     else:
         return -1 , -1, -1, -1, -1
