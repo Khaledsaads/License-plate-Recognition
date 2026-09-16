@@ -30,7 +30,18 @@ st.markdown("""
 - 📋 **View All Plate Occurrences** — Browse all detected license plate occurrences and their details.
 """)
 
+def time_to_frames(time_, fps=30):
+    hour, minute, sec = time_
+    frame = (3600*hour + 60*minute + sec)*fps
+    return frame
 
+def frame_to_time(frame_nums, fps=30):
+    frame_nums /= fps
+    num_hour = int(frame_nums/3600)
+    num_mins = int((frame_nums- num_hour* 3600)/ 60)
+    num_secs = int(frame_nums - num_hour* 3600 - num_mins * 60)
+    return (num_hour, num_mins, num_secs)
+    
 def save_full_video(uploaded_file):
     FULL_VIDEOS = Path("full_videos")
     FULL_VIDEOS.mkdir(parents=True, exist_ok=True)
@@ -38,7 +49,10 @@ def save_full_video(uploaded_file):
     file_path = FULL_VIDEOS/f'{full_video_id}.mp4'
     with open(file_path, 'wb')as f:
         f.write(uploaded_file.getbuffer())
-    
+    cap = cv2.VideoCapture(file_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    st.session_state['default_end_time'] = frame_to_time(total_frames, fps)
     st.session_state['current_session_id'] = full_video_id
 
 
@@ -71,24 +85,14 @@ def time_to_end():
     st.markdown("##### Enter end time")
     col4, col5, col6 = st.columns(3)
     with col4:
-        end_hour = st.number_input('Hour', min_value=0, max_value=3, value=0, step = 1, width= 70, key = 'end_hour')
+        end_hour = st.number_input('Hour', min_value=0, max_value=3, value=st.session_state['default_end_time'][0], step = 1, width= 70, key = 'end_hour')
     with col5:
-        end_minute = st.number_input('Minute', min_value=0, max_value=59, value=0, width=70, key = 'end_min')
+        end_minute = st.number_input('Minute', min_value=0, max_value=59, value=st.session_state['default_end_time'][1], width=70, key = 'end_min')
     with col6:
-        end_second = st.number_input('Second', min_value=0, max_value=59, value=0, width=70, key = 'end_sec')
+        end_second = st.number_input('Second', min_value=0, max_value=59, value=st.session_state['default_end_time'][2], width=70, key = 'end_sec')
     return (end_hour, end_minute, end_second)
 
-def time_to_frames(time_, fps=30):
-    hour, minute, sec = time_
-    frame = (3600*hour + 60*minute + sec)*fps
-    return frame
 
-def frame_to_time(frame_nums, fps=30):
-    frame_nums /= fps
-    num_hour = int(frame_nums/3600)
-    num_mins = int((frame_nums- num_hour* 3600)/ 60)
-    num_secs = int(frame_nums - num_hour* 3600 - num_mins * 60)
-    return (num_hour, num_mins, num_secs)
 
 def cut_video(start_time, end_time, video_source):
     CUTTED_PATH = Path('cutted_videos')
@@ -123,9 +127,53 @@ def cut_video(start_time, end_time, video_source):
     st.session_state['fps'] = fps
     return output_source
 
+start_time = time_to_start()
+end_time = time_to_end()
+confirm_time = st.button('Confirm time', type = 'primary')
+if confirm_time:
+  st.session_state['time_confirmed'] = True
+  st.session_state['start_time'] = start_time
+  st.session_state['end_time'] = end_time
+  video_source = Path(f'full_videos/{st.session_state["current_session_id"]}.mp4')
+  with st.spinner('Cutting video segment...'):
+    st.session_state['cutted_video_dist'] = cut_video(
+        start_time, end_time, video_source
+    )
+  st.session_state['last_start_time'] = start_time
+  st.session_state['last_end_time'] = end_time
+  st.rerun()
+        
+if not st.session_state.get('time_confirmed', False):
+    st.warning("please confirm time first")
+    st.stop()
+if not st.session_state.get('Processed', False):
+    with st.spinner("Start processing video..."):
+        with open(st.session_state['cutted_video_dist'], 'rb')as f:
+            files = {
+                'file': f
+            }
+            response = requests.post(f'{BASE_URL}/track', files=files)
+        if response.status_code ==200:
+            operation_id = response.json()['Job ID']
+            st.session_state['operation_id'] = operation_id
+            df = pd.read_csv(f'csv_results/{st.session_state['operation_id']}.csv')
+            license_plates = {}
+            for car_id in np.unique(df['car_id']):
+                mx = np.max(df[df['car_id']== car_id]['license_number_score'])
+                license_plate_number = df[
+                (df['car_id'] == car_id)&
+                (df['license_number_score'] ==mx)]['license_plate_number'].iloc[0]
+                first_frame = np.min(df[df['car_id']==car_id]['frame_nmr'])
+                last_frame = np.max(df[df['car_id']==car_id]['frame_nmr'])
+                license_plates[license_plate_number]= (first_frame, last_frame)
+            st.session_state['license_plates'] = license_plates
+            st.session_state['Processed'] = True
+            st.success("Video Processed Successfully.")
+        else:
+            st.error("Processing failed.")
 
-
-choice = st.selectbox(
+if st.session_state.get('Processed', False) :
+    choice = st.selectbox(
     'what do you want to do?',
     [
         'Annotate a video',
@@ -135,57 +183,14 @@ choice = st.selectbox(
         'View all plate occurrences',
     ],
     index= None,
-    placeholder="Select an option..."
-)
-
-if choice == 'Search for a plate within a specific time interval':
-    start_time = time_to_start()
-    end_time = time_to_end()
-    confirm_time = st.button("Confirm time")
-    st.session_state['start_time'] = start_time
-    st.session_state['end_time'] = end_time
-    if confirm_time:
-        st.session_state['time_confirmed'] =True
-        video_source = Path(f'full_videos/{st.session_state["current_session_id"]}.mp4')
-        with st.spinner("Cutting video segment..."):
-            st.session_state['cutted_video_dist'] = cut_video(start_time, end_time, video_source)
-            
-    if not st.session_state.get('time_confirmed', False):
-        st.warning("please confirm time first")
-        st.stop()
-    if st.button("Process"):
-        with st.spinner("processing video..."):
-            with open(st.session_state['cutted_video_dist'], 'rb')as f:
-                files = {
-                    'file': f
-                }
-                response = requests.post(f'{BASE_URL}/track', files=files)
-            if response.status_code ==200:
-                st.session_state['Processed'] = True
-                st.success("Video Processed Successfully.")
-                operation_id = response.json()['Job ID']
-                st.session_state['operation_id'] = operation_id
-            else:
-                st.error("Processing failed.")
-    
-    if st.session_state.get('Processed', False) == True:
-        df = pd.read_csv(f'csv_results/{st.session_state['operation_id']}.csv')
-        license_plates = {}
-        for car_id in np.unique(df['car_id']):
-            mx = np.max(df[df['car_id']== car_id]['license_number_score'])
-            license_plate_number = df[
-            (df['car_id'] == car_id)&
-            (df['license_number_score'] ==mx)]['license_plate_number'].iloc[0]
-            print('*'*50)
-            print(license_plate_number)
-            print('*'*50)
-            first_frame = np.min(df[df['car_id']==car_id]['frame_nmr'])
-            last_frame = np.max(df[df['car_id']==car_id]['frame_nmr'])
-            license_plates[license_plate_number]= (first_frame, last_frame)
+    placeholder="Select an option...",
+    )
+  
+    if choice == 'View all plate occurrences':
         data = []
         video_start = time_to_frames(st.session_state['start_time'])
         video_end = time_to_frames(st.session_state['end_time'])
-        for plate, times in license_plates.items():
+        for plate, times in st.session_state['license_plates'].items():
             start_time_car = frame_to_time(video_start +times[0], st.session_state['fps'])
             end_time_car = frame_to_time(video_end +times[1], st.session_state['fps'])
             data.append({
@@ -193,5 +198,6 @@ if choice == 'Search for a plate within a specific time interval':
                 "Start Time": start_time_car,
                 "End Time": end_time_car
             })
-
         st.table(data)
+                        
+
